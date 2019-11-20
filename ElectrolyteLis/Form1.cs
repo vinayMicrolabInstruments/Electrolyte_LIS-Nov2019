@@ -38,6 +38,10 @@ namespace ElectrolyteLis
                     textBoxIpaddress.Text =  ip.ToString();
                 }
             }
+
+            /**/
+            linkLabel.Text = Properties.Settings.Default.DefaultPath.ToString();
+            /**/
             foldername = linkLabel.Text.ToString();
         }
 
@@ -54,11 +58,23 @@ namespace ElectrolyteLis
         private void backgroundWorker1_DoWork(object sender, DoWorkEventArgs e)
         {
             Socket sk = (Socket)e.Argument;
-            String path ="";
-            char[] charsToTrim = { '\0', '.', ' ' };
+            String path ="EA_Server\\";
+            char[] charsToTrim = { '\0', '.', ' ','\n','\r' };
             byte[] b = new byte[1024];
             string clientIPAddress = sk.LocalEndPoint.ToString();
             int k = sk.Receive(b);
+            //b[k - 1] = 0;
+
+            /**/
+            String tempStr = System.Text.Encoding.UTF8.GetString(b);
+            tempStr = tempStr.TrimEnd(charsToTrim);
+            if (tempStr.Contains("END"))
+            {
+                sk.Close();
+                return;
+            }
+            /**/
+            
             DateTime localDate = DateTime.Now;
             int year = localDate.Year;
             int month = localDate.Month;
@@ -68,18 +84,58 @@ namespace ElectrolyteLis
             path += dayofmonth.ToString();
             path = foldername + path;
 
+            /**/
+            String headerStr = "Date Time,Sample Type,PID,Patient Name,Results";
+            /**/
+
             ASCIIEncoding asen = new ASCIIEncoding();
             string result = "";
             result = System.Text.Encoding.UTF8.GetString(b);
             
-            result = result.TrimEnd(charsToTrim);      
-            if (Directory.Exists(path))
+            result = result.TrimEnd(charsToTrim);
+
+            /**/
+            int pos1 = result.IndexOf(',');
+            String writeBuffer = result.Substring(pos1+1);
+            String typeStr = result.Substring(0, pos1);
+            String fileName = null;
+
+            bool writeHeaderFlag = false;
+
+            switch(typeStr)
             {
-                
+                case "RESULT":
+                    fileName = "PatientRecords.csv";
+                    break;
+
+                case "REPORT":
+                    fileName = "Report.csv";
+                    break;
+
+                default:
+                    fileName = "Test.csv";
+                    break;
+            }
+            /**/
+
+            if (Directory.Exists(path))            
+            {
+                if (File.Exists(path + "\\" + fileName) == false)
+                    writeHeaderFlag = true;
+
                 using (System.IO.StreamWriter file =
-                new System.IO.StreamWriter(path+"\\Patientdata.csv", true))
+                new System.IO.StreamWriter(path+"\\"+ fileName, true))
                 {
-                    file.WriteLine(result);
+                    /*Header*/
+                    if(writeHeaderFlag)
+                    {
+                        writeHeaderFlag = false;
+                        file.WriteLine(headerStr);
+                        file.Flush();
+                    }                    
+                    /**/
+
+                    file.WriteLine(writeBuffer);
                     file.Flush();
                     file.Close();
                 }
@@ -89,19 +145,22 @@ namespace ElectrolyteLis
             {
                 Directory.CreateDirectory(path);
 
-                using (System.IO.StreamWriter file =
-                new System.IO.StreamWriter(path + "\\Patientdata.csv", true))
+                    using (System.IO.StreamWriter file =
+                new System.IO.StreamWriter(path + "\\"+ fileName, true))
                 {
-                    file.WriteLine(result);
+                    /*Header*/
+                    file.WriteLine(headerStr);
+                    file.Flush();
+                    /**/
+
+                    file.WriteLine(writeBuffer);
                     file.Flush();
                     file.Close();
                 }
                 backgroundWorker1.ReportProgress(1, "Data Received from: " + clientIPAddress);
-
             }
             sk.Send(asen.GetBytes("ACK\r\n"));
             sk.Close();
-
         }
 
         private void backgroundWorker1_ProgressChanged(object sender, ProgressChangedEventArgs e)
@@ -114,8 +173,7 @@ namespace ElectrolyteLis
             catch(Exception)
             {
 
-            }
-            
+            }            
         }
 
         private void serverthread()
@@ -150,6 +208,9 @@ namespace ElectrolyteLis
             {
                 linkLabel.Text = folderBrowserDialog1.SelectedPath;
                 foldername = folderBrowserDialog1.SelectedPath;
+
+                Properties.Settings.Default.DefaultPath = foldername;
+                Properties.Settings.Default.Save();
             }
         }
 
